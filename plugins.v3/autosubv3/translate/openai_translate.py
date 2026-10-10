@@ -105,14 +105,39 @@ class OpenAi:
 
     @staticmethod
     def _clean_text(text: str) -> str:
+        """彻底清理 AI 响应中的垃圾内容"""
         text = text or ""
+        
+        # 1. 移除常见的前缀标记
+        text = re.sub(r'^.*?(?:翻译结果|翻译如下|译文|结果)[:：\s]*', '', text, flags=re.MULTILINE)
+        
+        # 2. 移除 HTML 标签（包括 font, span, div 等）
+        text = re.sub(r'<[^>]+>', '', text, flags=re.MULTILINE)
+        
+        # 3. 移除 HTML 实体编码
+        text = text.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
+        text = text.replace('&amp;', '&').replace('&quot;', '"').replace('&#39;', "'")
+        
+        # 4. 移除上下文标记
+        text = re.sub(r'\s*\[待译\]\s*', '', text)
+        text = re.sub(r'\s*\[翻译失败\]\s*', '', text)
+        
+        # 5. 移除 SRT 格式残留
         text = re.sub(r'\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}', '', text)
         text = re.sub(r'^\s*\d+\s*$', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\s*\d+\s*\n', '', text)
+        
+        # 6. 修复中文/英文间距
         text = re.sub(r'([\u4e00-\u9fff])\s+([\u4e00-\u9fff])', r'\1\2', text)
         text = re.sub(r'([\u4e00-\u9fff])\s+([a-zA-Z0-9])', r'\1\2', text)
         text = re.sub(r'([a-zA-Z0-9])\s+([\u4e00-\u9fff])', r'\1\2', text)
+        
+        # 7. 清理多余空白
         text = re.sub(r'\s+\n', '\n', text)
+        text = re.sub(r'\n\s+', '\n', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # 8. 最后确保每行都被清理过
         lines = [line.strip() for line in text.split('\n')]
         return '\n'.join(line for line in lines if line)
 
