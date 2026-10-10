@@ -109,7 +109,17 @@ class OpenAi:
         text = text or ""
         
         # 1. 移除常见的前缀标记
-        text = re.sub(r'^.*?(?:翻译结果|翻译如下|译文|结果)[:：\s]*', '', text, flags=re.MULTILINE)
+        # 移除"翻译："、"翻译内容："、"翻译结果："等
+        text = re.sub(r'^[\s]*[翻译内容结果]+[\s]*[:：][^：]*?[\s]*', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^[\s]*[翻译]+[\s]*[:：][^：]*?[\s]*', '', text, flags=re.MULTILINE)
+        # 移除"翻译上下文："
+        text = re.sub(r'^[\s]*翻译上下文[\s]*[:：].*?(?=\n|\Z)', '', text, flags=re.MULTILINE | re.DOTALL)
+        # 移除"需要翻译的内容："
+        text = re.sub(r'^[\s]*需要翻译的内容[\s]*[:：][^：]*?[\s]*', '', text, flags=re.MULTILINE)
+        # 移除"当然可以"这类前缀（常见的 AI 响应开头）
+        text = re.sub(r'^[\s]*当然[可以]*[\s]*[:：]?[\s]*', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^[\s]*(?:Sure|Certainly|Yes|OK)[\s]*[:：]?[\s]*', '', text, flags=re.MULTILINE | re.IGNORECASE)
+        
         
         # 2. 移除 HTML 标签（包括 font, span, div 等）
         text = re.sub(r'<[^>]+>', '', text, flags=re.MULTILINE)
@@ -137,9 +147,17 @@ class OpenAi:
         text = re.sub(r'\n\s+', '\n', text)
         text = re.sub(r'\s+', ' ', text).strip()
         
-        # 8. 最后确保每行都被清理过
-        lines = [line.strip() for line in text.split('\n')]
-        return '\n'.join(line for line in lines if line)
+        # 8. 最后检查，如果仍包含明显的废料，再次清理
+        lines = []
+        for line in text.split('\n'):
+            line = line.strip()
+            # 如果这一行看起来像是标签或前缀，跳过
+            if any(marker in line for marker in ['翻译：', '翻译上下文', '需要翻译', '当然可以']):
+                continue
+            if line:
+                lines.append(line)
+        
+        return '\n'.join(lines)
 
     @staticmethod
     def _clean_ai_response(text: str) -> str:
@@ -172,34 +190,29 @@ class OpenAi:
         text = self._clean_text(text)
         context = self._clean_text(context) if context else None
 
-        system_prompt = """您是一位专业字幕翻译专家，必须遵循以下规则：
-==== 翻译规则 ====
-1. 精准翻译为简体中文，���持原文本意
-2. 自然的口语化表达，符合中文观影习惯
-3. 结合上下文语境，保持连贯性
-4. 按行翻译待译内容，不包括上下文
+        system_prompt = """您是一位专业字幕翻译专家，请严格遵循以下规则：
 
-==== 输出格式要求 ====
-⚠️ 严格要求：
-- 仅输出纯文本翻译内容，每行一个译文
-- 禁止输出任何前缀文字（如"翻译结果："、"译文："等）
-- 禁止输出任何HTML标签（<tag>、</tag>等）
-- 禁止输出任何标记或符号（[、]、{、}等）
-- 禁止输出任何说明文字或总结
-- 禁止输出代码块标记（```、~~~等）
+翻译规则：
+1. 将原文精准翻译为简体中文
+2. 使用口语化表达，符合观影习惯
+3. 按行翻译，不要包括上下文
+4. 输出仅包含译文，每行一个
 
-==== 示例 ====
-输入："Hello, world!"
-输出："你好，世界！"
+严格禁止：
+- 输出任何前缀标记（如"翻译："、"译文："等）
+- 输出任何结构化标签（如"翻译上下文："、"需要翻译："等）
+- 输出任何HTML标签
+- 输出任何说明文字
 
-输入："Good morning."
-输出："早上好。"
-
-==== 重要提示 ====
-如果您无法确定翻译内容是否包含非文本元素（如HTML、前缀等），
-请再次检查并确保输出是100%的纯文本。"""
-        user_prompt = f"翻译上下文：\n{context}\n\n需要翻译的内容：\n{text}" if context else f"请翻译：\n{text}"
-
+重要：您的响应必须是100%纯文本翻译内容，不能包含任何标记、说明或格式化符号。
+"""
+        # 不在 prompt 中加入结构化标签
+        if context:
+            user_prompt = f"参考上文：\n{context}\n\n请翻译以下内容，仅输出翻译结果：\n{text}"
+        else:
+            user_prompt = f"请翻译：{text}\n\n仅输出翻译结果。"
+    
+     
         last_error = ""
         for attempt in range(max_retries + 1):
             try:
@@ -210,13 +223,16 @@ class OpenAi:
                     top_p=0.9
                 )
                 result = completion.choices[0].message.content.strip()
+                # 多次清理
                 result = self._clean_text(result)
                 # 二次验证，确保结果干净
-                if not result or len(result) > 500 or any(tag in result.lower() for tag in ['<', '>', 'html', '翻译结果']):
-                    # 响应可能不清洁，强制再次清理
-                    result = re.sub(r'<[^>]+>', '', result)  # 移除任何剩余HTML
-                    result = re.sub(r'^[^：：]*[：：]', '', result)  # 移除前缀
+                if any(marker in result for marker in ['翻译：', '翻译上下文', '需要翻译', '<', '>', '[待译]', '[翻译']):
+                    # 继续清理
+                    result = re.sub(r'^[^：]*?[:：]\s*', '', result, flags=re.MULTILINE)
+                    result = re.sub(r'<[^>]+>', '', result)
+                    result = re.sub(r'\[[^\]]*\]', '', result)
                     result = result.strip()
+                    
                 self._last_error = ""
                 return True, result
             except Exception as e:
