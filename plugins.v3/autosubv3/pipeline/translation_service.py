@@ -67,6 +67,49 @@ class TranslationService:
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
+    @staticmethod
+    def _validate_translation_output(text: str) -> str:
+        """验证翻译输出的合法性"""
+        if not text:
+            return text
+        
+        # 检查禁止内容列表
+        forbidden_patterns = [
+            r'<[^>]+>',  # HTML 标签
+            r'翻译结果|翻译如下|译文|结果',  # 前缀文字
+            r'\[待译\]|\[翻译|翻译失败\]',  # 上下文标记
+            r'```|~~~|```',  # 代码块标记
+            r'^[\s]*【|】',  # 中文括号标记
+        ]
+        
+        for pattern in forbidden_patterns:
+            matches = re.findall(pattern, text, re.MULTILINE)
+            if matches:
+                # 发现禁止内容，清理它们
+                text = re.sub(pattern, '', text, flags=re.MULTILINE)
+        
+        return text.strip()
+    
+    def format_translated_content(self, original: Any, translated: Any, output_mode: str = None) -> str:
+        trans = self.normalize_subtitle_text_line(translated)
+        origin = self.normalize_subtitle_text_line(original)
+        
+        # 验证翻译输出
+        trans = self._validate_translation_output(trans)
+        
+        if (output_mode or self._output_mode()) == 'chinese_only':
+            return trans
+        if not origin:
+            return trans
+        if not trans:
+            return origin
+        
+        # 检查重复处理
+        if trans and origin.startswith(trans):
+            return origin
+        
+        return f"{trans}\n{origin}"
+        
     def format_translated_content(self, original: Any, translated: Any, output_mode: str = None) -> str:
         trans = self.normalize_subtitle_text_line(translated)
         origin = self.normalize_subtitle_text_line(original)
@@ -140,6 +183,9 @@ class TranslationService:
         success, trans = (translate_to_zh or self.translate_to_zh)(item.content, context)
 
         if success:
+            # 验证翻译结果
+            trans = self._validate_translation_output(trans)
+        
             item.content = self.format_translated_content(item.content, trans)
             self._stats()['line_fallback'] += 1
             self._stats()['translated'] += 1
