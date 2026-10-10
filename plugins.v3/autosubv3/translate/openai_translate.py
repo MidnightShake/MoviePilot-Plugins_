@@ -172,13 +172,32 @@ class OpenAi:
         text = self._clean_text(text)
         context = self._clean_text(context) if context else None
 
-        system_prompt = """您是一位专业字幕翻译专家，请严格遵循以下规则：
-1. 将原文精准翻译为简体中文，保持原文本意
-2. 使用自然的口语化表达，符合中文观影习惯
-3. 结合上下文语境，人物称谓、专业术语、情感语气在上下文中保持连贯
-4. 按行翻译待译内容。翻译结果不要包括上下文。
-5. 输出内容必须仅包括译文。不要输出任何开场白，解释说明或总结
-6. 遇到英文脏话时请翻译成自然中文口语，不要保留英文单词"""
+        system_prompt = """您是一位专业字幕翻译专家，必须遵循以下规则：
+==== 翻译规则 ====
+1. 精准翻译为简体中文，���持原文本意
+2. 自然的口语化表达，符合中文观影习惯
+3. 结合上下文语境，保持连贯性
+4. 按行翻译待译内容，不包括上下文
+
+==== 输出格式要求 ====
+⚠️ 严格要求：
+- 仅输出纯文本翻译内容，每行一个译文
+- 禁止输出任何前缀文字（如"翻译结果："、"译文："等）
+- 禁止输出任何HTML标签（<tag>、</tag>等）
+- 禁止输出任何标记或符号（[、]、{、}等）
+- 禁止输出任何说明文字或总结
+- 禁止输出代码块标记（```、~~~等）
+
+==== 示例 ====
+输入："Hello, world!"
+输出："你好，世界！"
+
+输入："Good morning."
+输出："早上好。"
+
+==== 重要提示 ====
+如果您无法确定翻译内容是否包含非文本元素（如HTML、前缀等），
+请再次检查并确保输出是100%的纯文本。"""
         user_prompt = f"翻译上下文：\n{context}\n\n需要翻译的内容：\n{text}" if context else f"请翻译：\n{text}"
 
         last_error = ""
@@ -192,6 +211,12 @@ class OpenAi:
                 )
                 result = completion.choices[0].message.content.strip()
                 result = self._clean_text(result)
+                # 二次验证，确保结果干净
+                if not result or len(result) > 500 or any(tag in result.lower() for tag in ['<', '>', 'html', '翻译结果']):
+                    # 响应可能不清洁，强制再次清理
+                    result = re.sub(r'<[^>]+>', '', result)  # 移除任何剩余HTML
+                    result = re.sub(r'^[^：：]*[：：]', '', result)  # 移除前缀
+                    result = result.strip()
                 self._last_error = ""
                 return True, result
             except Exception as e:
@@ -327,6 +352,11 @@ class OpenAi:
                 for item in output_batch:
                     idx = int(item["id"]) - 1
                     zh = self._clean_text(item["zh"])
+                    # 清理 zh 字段
+                    zh = self._clean_text(zh)  # 二次清理
+                    zh = re.sub(r'<[^>]+>', '', zh)  # 移除 HTML 标签
+                    zh = re.sub(r'^[^：：]*[：：]\s*', '', zh)  # 移除前缀
+
                     if 0 <= idx < len(translations):
                         translations[idx] = zh
 
