@@ -122,16 +122,24 @@ class TranslationService:
         return f"{trans}\n{origin}"
 
     def get_context(self, all_subs: list, target_indices: List[int], is_batch: bool) -> str:
+        """生成翻译上下文，但不混入已污染的字幕内容"""
         context_window = self._context_window()
         min_idx = max(0, min(target_indices) - context_window)
         max_idx = min(len(all_subs) - 1, max(target_indices) + context_window) if is_batch else min(target_indices)
-
         context = []
         for idx in range(min_idx, max_idx + 1):
+            # 获取字幕内容，但先清理可能的污染前缀
+            content = all_subs[idx].content or ""
+            content = content.replace('\n', ' ').strip()
+            # 从 content 中移除污染前缀
+            content = re.sub(r'^[^：]*?[:：]\s*', '', content)  # 移除前缀
+            content = re.sub(r'<[^>]+>', '', content)  # 移除 HTML
+            content = re.sub(r'\[[^\]]*\]', '', content)  # 移除标记
+            if not content:
+                continue  # 如果清理后为空，跳过
             status = "[待译]" if idx in target_indices else ""
-            content = all_subs[idx].content.replace('\n', ' ').strip()
             context.append(f"{status}{content}")
-        return "\n".join(context)
+        return "\n".join(context) if context else ""
 
     def translate_to_zh(self, text: str, context: str = None, max_retries: int = None) -> str:
         self._raise_if_task_cancelled()
