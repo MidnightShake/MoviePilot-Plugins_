@@ -367,12 +367,16 @@ class OpenAi:
                 translations: List[Optional[str]] = [None] * len(texts)
                 for item in output_batch:
                     idx = int(item["id"]) - 1
-                    zh = self._clean_text(item["zh"])
-                    # 清理 zh 字段
-                    zh = self._clean_text(zh)  # 二次清理
-                    zh = re.sub(r'<[^>]+>', '', zh)  # 移除 HTML 标签
-                    zh = re.sub(r'^[^：：]*[：：]\s*', '', zh)  # 移除前缀
-
+                    zh = item.get("zh", "").strip()
+                    # 关键：在这里再次清理
+                    zh = self._clean_text(zh)
+                    # 二次验证
+                    if any(marker in zh for marker in ['翻译：', '翻译上下文', '需要翻译']):
+                        # 强制清理
+                        zh = re.sub(r'^[^：]*?[:：]\s*', '', zh)
+                        zh = re.sub(r'<[^>]+>', '', zh)
+                        zh = re.sub(r'\[[^\]]*\]', '', zh)
+                        zh = zh.strip()
                     if 0 <= idx < len(translations):
                         translations[idx] = zh
 
