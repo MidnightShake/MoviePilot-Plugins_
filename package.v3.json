@@ -29,7 +29,7 @@
     "name": "AI字幕生成(联动版)",
     "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取、大模型并发翻译与字幕匹配联动。",
     "labels": "字幕,AI,翻译",
-    "version": "4.0.2",
+    "version": "4.0.3",
     "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
     "author": "ifsherlock",
     "author_url": "https://github.com/ifsherlock",
@@ -37,6 +37,7 @@
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v4.0.3": "进一步修复增加 V3 字幕文件内容过滤清理。",
       "v4.0.2": "修复增加 V3 字幕文件内容过滤清理。",
       "v4.0.1": "修复 V3 依赖清单 UTF-8 BOM 导致 iso639 解析失败，保留 TransferComplete 事件任务提交与 V2 配置、任务数据兼容。",
       "v4.0.0": "新增 MoviePilot V3 专用实现：迁移稳定 SDK 导入并适配 TransferComplete 事件任务提交，保留 V2 配置、任务数据和字幕匹配联动兼容。"
